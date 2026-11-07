@@ -3,9 +3,11 @@
 #include <string.h>
 #include <pthread.h>
 #include "mapreduce.h"
+#include "threadpool.h"
 #define DEFAULT_VAL_CAPACITY 10
+#define DEFAULT_MAP_CAPACITY 1024
 
-typedef struct entry{
+typedef struct entry {
   char* key;
   char** values;
   struct entry* next;
@@ -20,7 +22,9 @@ typedef struct {
   pthread_mutex_t* locks;
 } HashMap;
 
-HashMap** maps;
+static HashMap** maps;
+static Partitioner global_partitioner;
+static unsigned int global_num_reducers;
 
 HashMap* create_map(unsigned int capacity) {
   HashMap* map = malloc(sizeof(HashMap));
@@ -47,9 +51,9 @@ HashMap* create_map(unsigned int capacity) {
   }
   for(unsigned int i = 0; i < capacity; i++){
     int rc = pthread_mutex_init(&map->locks[i], NULL);
-    if (rc != 0){
+    if(rc != 0){
         fprintf(stderr, "Mutex init failed: %s\n", strerror(rc));
-        for (unsigned int j = 0; j < i; j++){
+        for(unsigned int j = 0; j < i; j++){
             pthread_mutex_destroy(&map->locks[j]);
         }
         free(map->locks);
@@ -62,7 +66,7 @@ HashMap* create_map(unsigned int capacity) {
   return map;
 }
 
-unsigned long hash(const char *str) {
+unsigned long hash(const char *str){
   unsigned long hash = 5381;
   int c;
 
@@ -73,7 +77,7 @@ unsigned long hash(const char *str) {
   return hash;
 }
 
-unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
+unsigned long MR_DefaultHashPartition(char *key, int num_partitions){
   unsigned long hash = 5381;
   int c;
   while ((c = *key++) != '\0')
@@ -81,12 +85,12 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
   return hash % num_partitions;
 }
 
-static entry *get(HashMap *map, const char *key) {
+static entry *get(HashMap *map, const char *key){
   unsigned int bucket = hash(key) % map->capacity;
 
   entry *cur = map->entries[bucket];
 
-  while (cur) {
+  while (cur){
       if (strcmp(cur->key, key) == 0)
           return cur;
 
@@ -96,7 +100,7 @@ static entry *get(HashMap *map, const char *key) {
   return NULL;
 }
 
-static void insert(const char* key, const char* value, int partition_number){
+static void insert(const char* key, const char* value, unsigned long partition_number){
   unsigned int bucket_idx = hash(key) % maps[partition_number]->capacity;
   pthread_mutex_lock(&maps[partition_number]->locks[bucket_idx]);
   HashMap* cur_map = maps[partition_number];
@@ -112,7 +116,7 @@ static void insert(const char* key, const char* value, int partition_number){
       cur->value_capacity *= 2;
     }
     char *copy = strdup(value);
-    if (!copy) {
+    if (!copy){
         perror("strdup failed");
         pthread_mutex_unlock(&cur_map->locks[bucket_idx]);
         exit(EXIT_FAILURE);
@@ -187,13 +191,23 @@ char* Getter(char *key, int partition_number){
 }
 
 void MR_Emit(char *key, char *value){
-  
+  unsigned long partition_number = global_partitioner(key, global_num_reducers);
+  insert(key, value, partition_number);  
 }
 
 
 void MR_Run(int argc, char *argv[], 
-	    Mapper map, int num_mappers, 
-	    Reducer reduce, int num_reducers, 
-	    Partitioner partition) {
+    Mapper map, int num_mappers, 
+    Reducer reduce, int num_reducers, 
+    Partitioner partition){
+
+  global_num_reducers = num_reducers;
+  global_partitioner = partition;
+
+  maps = (HashMap **)malloc(global_num_reducers * sizeof(HashMap*));
+  for(int i = 0; i < global_num_reducers; i++)
+    maps[i] = create_map(DEFAULT_MAP_CAPACITY);
+  
+
 
 } 
