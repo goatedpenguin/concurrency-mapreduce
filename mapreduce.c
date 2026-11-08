@@ -84,7 +84,7 @@ static unsigned long hash(const char* str){
   return hash;
 }
 
-static unsigned long MR_DefaultHashPartition(char* key, int num_partitions){
+unsigned long MR_DefaultHashPartition(char* key, int num_partitions){
   return hash(key) % num_partitions;
 }
 
@@ -175,7 +175,7 @@ static void insert(const char* key, const char* value, unsigned long partition_n
   pthread_mutex_unlock(&cur_map->locks[bucket_idx]);
 }
 
-static char* Getter(char *key, int partition_number){
+static char* internal_getter(char *key, int partition_number){
   HashMap* cur_map = maps[partition_number];
   unsigned int bucket = hash(key) % cur_map->capacity;
   entry* cur = cur_map->entries[bucket];
@@ -240,7 +240,7 @@ static void reducer_worker(void* arg){
   }
   qsort(keys, key_count, sizeof(char *), compare_keys);
   for(size_t i = 0; i < key_count; i++){
-    reducer_args->reduce(keys[i], Getter, reducer_args->partition_number);
+    reducer_args->reduce(keys[i], internal_getter, reducer_args->partition_number);
   }
   free(keys);
   free(reducer_args);
