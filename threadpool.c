@@ -23,22 +23,38 @@ struct threadpool {
 static void* threadpool_worker(void* threadpool);
 
 threadpool_t* threadpool_create(int thread_count){
+  if(thread_count <= 0){
+    perror("Invalid thread count\n");
+    return NULL;
+  }
   struct threadpool* tp = (struct threadpool *) malloc(sizeof(struct threadpool));
+  if(!tp){
+    perror("malloc: threadpool allocation failed\n");
+    return NULL;  
+  }
 
-  if (pthread_mutex_init(&tp->lock, NULL) != 0 ||
-    pthread_cond_init(&tp->notify, NULL) != 0) {
+  int rc = pthread_mutex_init(&tp->lock, NULL);
+  if(rc != 0){
+    perror("Mutex init failed\n");
     free(tp);
     return NULL;
   }
 
-  
+  rc = pthread_cond_init(&tp->notify, NULL);
+  if(rc != 0){
+    perror("Condition init failed\n");
+    pthread_mutex_destroy(&tp->lock);
+    free(tp);
+    return NULL;
+  }
+
   tp->threads = (pthread_t* )malloc(thread_count * sizeof(pthread_t));
   if(!tp->threads){
-    perror("Malloc: Thread creation failed");
+    perror("malloc: Thread creation failed\n");
     pthread_mutex_destroy(&tp->lock);
     pthread_cond_destroy(&tp->notify);
     free(tp);
-    exit(EXIT_FAILURE);
+    return NULL;
   }
 
   tp->head = NULL;
@@ -89,8 +105,8 @@ static void* threadpool_worker(void* threadpool){
 int threadpool_add_work(threadpool_t* pool, void (*function)(void*), void* arg){
   thpool_task_t* task = (thpool_task_t *)malloc(sizeof(thpool_task_t));
   if(!task){
-    perror("Malloc: task creation failed");
-    exit(EXIT_FAILURE);
+    perror("malloc: task creation failed\n");
+    return 1;
   }
 
   task->function = function;
