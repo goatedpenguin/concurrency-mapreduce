@@ -23,7 +23,7 @@ typedef struct {
 } HashMap;
 
 typedef struct {
-  char *filename;
+  char* filename;
   Mapper map;
 } mapper_args_t;
 
